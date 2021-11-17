@@ -1,0 +1,183 @@
+#패키지 준비하기
+from pandas import DataFrame
+from matplotlib import pyplot as plt
+import seaborn as sns
+import numpy as np
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import BatchNormalization, Dense, Conv2D, MaxPool2D, Flatten, Dropout
+from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras.callbacks import ReduceLROnPlateau
+from tensorflow.keras.callbacks import ModelCheckpoint
+from tensorflow.keras.utils import to_categorical
+from tensorflow.keras.datasets.fashion_mnist import load_data
+from sklearn.metrics import confusion_matrix
+from sklearn.model_selection import train_test_split
+
+#데이터셋 준비하기
+(x_train, y_train), (x_test, y_test) = load_data()
+print(f'훈련 데이터 {x_train.shape} 레이블 {y_train.shape}')
+print(f'검증 데이터 {x_test.shape} 레이블 {y_test.shape}')
+
+class_names = ['T-shirt/top', 'Trouser', 'Pullover', 'Dress', 'Coat', 'Sandal', 'Shirt', 'Sneaker', 'Bag', 'Ankle boo
+t']
+
+#샘플 값 확인
+for i in x_train[1]:
+  for j in i:
+      print("%03d" % j, end="")
+  print()
+
+#샘플에 대한 종속변수 확인
+y = y_train[1]
+yname = class_names[y]
+print(y, " >> ", yname)
+
+
+#데이터 그려보기
+fig, ax = plt.subplots(1, 5, figsize=(15, 3), dpi=100)
+for i in range(0, len(ax)):
+  train = x_train[i]
+  label = y_train[i]
+  ax[i].imshow(train)
+  ax[i].set_title("label=%d" % label)
+
+plt.savefig('fasion1.png', dpi=200, bbox_inches='tight')
+plt.show()
+plt.close()
+
+
+#데이터셋 분할하기
+np.random.seed(777)
+
+#one-hot-encoding
+y_train_one_hot = to_categorical(y_train)
+y_test_one_hot = to_categorical(y_test)
+print(y_test_one_hot)
+
+#훈련, 검증용 독립변수(이미지)의 차수 재설정
+x_train_reshape = x_train.reshape(x_train.shape[0], x_train.shape[1], x_train.shape[2], 1)
+x_test_reshape = x_test.reshape(x_test.shape[0], x_test.shape[1], x_test.shape[2], 1)
+print(f'훈련 데이터 {x_train_reshape.shape} / 검증 데이터 {x_train_reshape.shape}')
+
+
+#모델 개발
+model = Sequential()
+# Conv2D
+model.add(Conv2D(filters=32, kernel_size=(5, 5), strides=(1, 1), padding='same', activation='relu', input_shape=(28, 2
+8, 1)))
+# 표준화
+model.add(BatchNormalization())
+# MaxPool2D
+model.add(MaxPool2D(pool_size=(2, 2), strides=(2, 2)))
+# 랜덤으로 25%의 뉴런을 쉬게함
+model.add(Dropout(0.25))
+# 이전보다 filter는 크게, kelnel_size는 작게, input_shape는 최초에만 적용하므로 여기서는 생략
+model.add(Conv2D(filters=64, kernel_size=(3, 3), strides=(1, 1), padding='same', activation='relu'))
+model.add(BatchNormalization())
+model.add(MaxPool2D(pool_size=(2, 2), strides=(2, 2)))
+model.add(Dropout(0.25))
+# 1차원으로 변환하기 위한 Layer
+model.add(Flatten())
+model.add(Dense(512, activation='relu'))
+model.add(Dense(256, activation='relu'))
+model.add(Dense(128, activation='relu'))
+# 최종 아웃풋의 수는 one_hot_encoding의 원소 수 만큼
+model.add(Dense(10, activation='softmax'))
+model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['acc'])
+model.summary()
+
+#학습하기
+result = model.fit(x_train_reshape, y_train_one_hot, epochs=500, validation_data=(x_test_reshape, y_test_one_hot), call
+backs = [
+  #ModelCheckpoint(filepath = 'check_point.h5', monitor = 'val_loss', verbose=1, save_best_only = True),
+  EarlyStopping(monitor = 'val_loss', patience=5, verbose = 1),
+  ReduceLROnPlateau(monitor= "val_loss", patience=3, factor = 0.5, min_lr=0.0001, verbose=1)
+])
+result_df = DataFrame(result.history)
+result_df['epochs'] = result_df.index+1
+result_df.set_index('epochs', inplace=True)
+result_df
+
+#학습 결과 평가
+# 그래프 기본 설정
+# ----------------------------------------
+plt.rcParams["font.family"] = 'Malgun Gothic'
+plt.rcParams["font.size"] = 16
+plt.rcParams['axes.unicode_minus'] = False
+# 그래프를 그리기 위한 객체 생성
+# ----------------------------------------
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 5), dpi=150)
+# 1) 훈련 및 검증 손실 그리기
+# ----------------------------------------
+sns.lineplot(x=result_df.index, y='loss', data=result_df, color='blue', label='훈련 손실률', ax=ax1)
+sns.lineplot(x=result_df.index, y='val_loss', data=result_df, color='orange', label='검증 손실률', ax=ax1)
+ax1.set_title('훈련 및 검증 손실률')
+ax1.set_xlabel('반복회차')
+ax1.set_ylabel('손실률')
+ax1.grid()
+ax1.legend()
+# 2) 훈련 및 정확도 그리기
+# ----------------------------------------
+sns.lineplot(x=result_df.index, y='acc', data=result_df, color = 'blue', label = '훈련 정확도', ax=ax2)
+sns.lineplot(x=result_df.index, y='val_acc', data=result_df, color = 'orange', label = '검증 정확도', ax=ax2)
+ax2.set_title('훈련 및 검증 정확도')
+ax2.set_xlabel('반복회차')
+ax2.set_ylabel('정확도')
+ax2.grid()
+ax2.legend()
+plt.savefig('fasion2.png', dpi=200, bbox_inches='tight')
+plt.show()
+plt.close()
+
+#모델 성능 평가
+evaluate = model.evaluate(x_test_reshape, y_test_one_hot)
+print("최종 손실률: %f, 최종 정확도: %f" % (evaluate[0], evaluate[1]))
+
+#학습 결과 적용
+result = model.predict(x_test_reshape)
+data_count, case_count = result.shape
+print("%d개의 검증 데이터가 %d개의 경우의 수를 갖는다." % (data_count, case_count))
+result[0]
+
+arg_result = np.argmax(result, axis=-1)
+arg_result
+
+#데이터 비교
+row = 3
+col = 5
+fig, ax = plt.subplots(row, col, figsize=((col+1)*4, (row+1)*4), dpi=100)
+size = row*col
+CNN - FasionMNIST 예제 9
+length = len(y_test)
+for i in range(0, size):
+  k = np.random.randint(length)
+  train = x_test[k]
+  label = y_test[k]
+  ax[i//col][i%col].imshow(train)
+  ax[i//col][i%col].set_title("label=%d, LM=%d" % (label, arg_result[k]))
+plt.savefig('fasion3.png', dpi=200, bbox_inches='tight')
+plt.show()
+plt.close()
+
+#혼동 행렬
+cm = confusion_matrix(y_test, arg_result)
+cmdf2 = DataFrame(cm, columns=list(map(lambda x: "실제값(%d)" % x, range(10))), index=list(map(lambda x: "예측값(%d)" % x,
+range(10))))
+cmdf2
+
+#혼동행렬 히트맵
+# --> 5를 분류할 때 가장 많이 혼란스러워 한다.
+# --> 오차행렬은 모델의 강점과 약점을 파악하기에 유용하다.
+plt.rcParams["font.family"] = 'Malgun Gothic'
+plt.rcParams["font.size"] = 8
+fig, ax = plt.subplots(1, 1, figsize=(10, 5), dpi=150)
+# 오차 행렬을 히트맵 그래프로 표현
+# -> annot : 그래프의 각 칸에 수치값 출력
+# -> fmt : 수치값 출력 format (여기서는 10진수)
+# -> cmap : 색상맵 (https://matplotlib.org/3.2.1/tutorials/colors/colormaps.html)
+sns.heatmap(cmdf2, annot = True, fmt = 'd', cmap = 'Blues', ax=ax)
+ax.set_xlabel('결과값')
+ax.set_ylabel('예측값')
+plt.savefig('fasion4.png', dpi=200, bbox_inches='tight')
+plt.show()
+plt.close()
